@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetScope</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #66707c; --line: #e2e5ea;
+    --accent: #2f6fed; --good: #1a8f4c; --warn: #b7791f; --bad: #c53030; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --panel: #1a1e24; --text: #e6e9ee; --muted: #8b95a3; --line: #2a3039;
+      --accent: #6b9bff; --good: #4cc38a; --warn: #e3b341; --bad: #f47067; --code: #14171c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 16px; margin: 0; }
+  header .status { color: var(--muted); font-size: 13px; margin-left: auto; }
+  main { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: calc(100vh - 45px); }
+  aside { border-right: 1px solid var(--line); background: var(--panel); padding: 12px; }
+  section { padding: 16px; min-width: 0; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 16px 0 8px; }
+  h2:first-child { margin-top: 0; }
+  button, input, select { font: inherit; color: inherit; }
+  input, select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .stack > * + * { margin-top: 6px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .device { display: block; width: 100%; text-align: left; margin-bottom: 6px; }
+  .device.active { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+  .device small { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .err { color: var(--bad); font-size: 12px; white-space: pre-wrap; }
+  .layout { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+  .screen-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  #screen { display: block; max-height: 70vh; max-width: 360px; width: auto; border-radius: 6px; background: #000; cursor: crosshair; user-select: none; -webkit-user-drag: none; touch-action: none; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  .card .label { color: var(--muted); font-size: 12px; }
+  .card .value { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .card .unit { font-size: 12px; color: var(--muted); margin-left: 2px; }
+  .card canvas { width: 100%; height: 36px; display: block; margin-top: 4px; }
+  .logs { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .logs .row { padding: 8px; border-bottom: 1px solid var(--line); }
+  .logs .row input { width: auto; flex: 1; min-width: 140px; }
+  #log { height: 320px; overflow: auto; margin: 0; padding: 8px; background: var(--code); font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; border-radius: 0 0 10px 10px; }
+  .lv-E, .lv-F { color: var(--bad); } .lv-W { color: var(--warn); } .lv-D, .lv-V { color: var(--muted); }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    .layout { grid-template-columns: 1fr; } #screen { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>NetScope</h1>
+  <span class="hint">phone monitoring over Wi-Fi / Tailscale</span>
+  <span class="status" id="status"></span>
+</header>
+<main>
+  <aside>
+    <h2>Devices <button id="refresh" style="float:right;padding:0 6px">↻</button></h2>
+    <div id="devices"><div class="hint">Looking for devices…</div></div>
+
+    <h2>Connect Android</h2>
+    <form id="connect" class="stack">
+      <input name="address" placeholder="Phone IP:port (e.g. 100.101.1.2:37851)">
+      <details>
+        <summary class="hint">First time? Pair with code</summary>
+        <div class="stack" style="margin-top:6px">
+          <input name="pair_address" placeholder="Pairing IP:port">
+          <input name="pair_code" placeholder="6-digit code" inputmode="numeric">
+        </div>
+      </details>
+      <button class="primary" type="submit">Connect</button>
+      <div class="err" id="connect-err"></div>
+    </form>
+    <p class="hint">On the phone: Developer options → Wireless debugging. iPhones appear here automatically while <code>pymobiledevice3 remote tunneld</code> runs.</p>
+  </aside>
+
+  <section id="detail"><div class="empty">Pick or connect a device to start.</div></section>
+</main>
+
+<template id="detail-tpl">
+  <div class="row" style="margin-bottom:12px">
+    <strong id="dev-title"></strong><span class="hint" id="dev-sub"></span>
+  </div>
+  <div class="row" style="margin-bottom:12px">
+    <input id="pkg" list="pkgs" placeholder="App package (Android) or process name (iOS)" style="max-width:340px">
+    <datalist id="pkgs"></datalist>
+    <button id="watch" class="primary">Watch app</button>
+    <button data-app="launch">Launch</button>
+    <button data-app="stop">Force stop</button>
+  </div>
+  <div class="layout">
+    <div class="screen-wrap">
+      <img id="screen" alt="Device screen" draggable="false">
+      <div class="row" style="margin-top:8px" id="keys">
+        <button data-key="back">◁</button><button data-key="home">○</button><button data-key="recents">▢</button>
+        <label class="hint row" style="margin-left:auto"><input type="checkbox" id="live" checked style="width:auto"> live</label>
+      </div>
+      <form class="row" id="type" style="margin-top:6px">
+        <input name="text" placeholder="Type text on phone" style="flex:1;width:auto"><button>Send</button>
+      </form>
+      <div class="hint" id="screen-info" style="margin-top:4px">Click to tap, drag to swipe.</div>
+    </div>
+    <div>
+      <div class="cards" id="cards"></div>
+      <div class="err" id="metrics-err" style="margin-top:6px"></div>
+    </div>
+  </div>
+  <div class="logs">
+    <div class="row">
+      <strong>Logs</strong>
+      <input id="log-filter" placeholder="Filter (text or /regex/)">
+      <select id="log-level" style="width:auto">
+        <option value="">All levels</option><option value="I">Info+</option><option value="W">Warn+</option><option value="E">Error+</option>
+      </select>
+      <button id="log-pause">Pause</button><button id="log-clear">Clear</button>
+    </div>
+    <pre id="log"></pre>
+  </div>
+</template>
+
+<script>
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get("token") || "";
+const METRICS = [
+  ["app_cpu_pct", "App CPU", "%"], ["app_rss_mb", "App memory", "MB"], ["fps", "Frames / s", "fps"],
+  ["jank_pct", "Janky frames", "%"], ["frame_p90_ms", "Frame time p90", "ms"], ["sys_cpu_pct", "Device CPU", "%"],
+  ["net_rx_kbps", "Network in", "KB/s"], ["net_tx_kbps", "Network out", "KB/s"],
+  ["battery_level", "Battery", "%"], ["battery_temp_c", "Battery temp", "°C"],
+];
+const HISTORY = 90;
+const LEVELS = "VDIWEF";
+let current = null, metricsSrc = null, logSrc = null, history = {}, logPaused = false, logLines = [];
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const api = (path) => `/api/${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(TOKEN)}`;
+const devPath = (rest) => `devices/${encodeURIComponent(current.id)}/${rest}`;
+
+async function call(path, body) {
+  const res = await fetch(api(path), body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const data = res.headers.get("Content-Type")?.includes("json") ? await res.json() : null;
+  if (!res.ok) throw new Error(data?.error || res.statusText);
+  return data;
+}
+
+function status(msg) { $("#status").textContent = msg; }
+
+async function loadDevices() {
+  const box = $("#devices");
+  try {
+    const list = await call("devices");
+    box.innerHTML = "";
+    if (!list.length) box.innerHTML = '<div class="hint">No devices yet.</div>';
+    for (const d of list) {
+      const b = document.createElement("button");
+      b.className = "device" + (current?.id === d.id ? " active" : "");
+      b.innerHTML = `<span></span><small></small>`;
+      b.firstChild.textContent = `${d.platform === "ios" ? "" : "🤖 "}${d.name}`;
+      b.lastChild.textContent = `${d.id}${d.state && d.state !== "device" ? " · " + d.state : ""}`;
+      b.disabled = d.state && d.state !== "device";
+      b.onclick = () => select(d);
+      box.appendChild(b);
+    }
+  } catch (e) { box.innerHTML = ""; box.append(Object.assign(document.createElement("div"), { className: "err", textContent: e.message })); }
+}
+
+$("#refresh").onclick = loadDevices;
+$("#connect").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const f = new FormData(ev.target), err = $("#connect-err");
+  err.textContent = ""; status("Connecting…");
+  try {
+    await call("connect", Object.fromEntries([...f].filter(([, v]) => v)));
+    status("Connected"); await loadDevices();
+  } catch (e) { err.textContent = e.message; status(""); }
+};
+
+function stopStreams() {
+  metricsSrc?.close(); logSrc?.close(); metricsSrc = logSrc = null;
+}
+
+async function select(d) {
+  stopStreams();
+  current = d; history = {}; logLines = [];
+  const detail = $("#detail");
+  detail.innerHTML = ""; detail.appendChild($("#detail-tpl").content.cloneNode(true));
+  $("#dev-title").textContent = d.name;
+  loadDevices();
+  buildCards();
+  wireControls();
+  screenLoop(d);
+  startStreams();
+  try {
+    const info = await call(devPath("info"));
+    if (current !== d) return;
+    $("#dev-title").textContent = info.name || d.name;
+    $("#dev-sub").textContent = [info.manufacturer, info.model, info.os, info.screen].filter(Boolean).join(" · ");
+    const caps = info.capabilities || [];
+    if (!caps.includes("input")) {
+      $("#keys").querySelectorAll("button").forEach(b => b.disabled = true);
+      $("#type").style.display = "none";
+      $("#screen-info").textContent = "Remote input isn't available for this device.";
+    }
+  } catch (e) { $("#dev-sub").textContent = e.message; }
+  if (d.platform === "android") {
+    call(devPath("packages")).then(list => {
+      $("#pkgs").replaceChildren(...list.map(p => Object.assign(document.createElement("option"), { value: p })));
+    }).catch(() => {});
+  }
+}
+
+function buildCards() {
+  $("#cards").innerHTML = METRICS.map(([key, label, unit]) =>
+    `<div class="card" data-key="${key}"><div class="label">${label}</div>` +
+    `<div><span class="value">–</span><span class="unit">${unit}</span></div><canvas></canvas></div>`).join("");
+}
+
+function wireControls() {
+  $("#watch").onclick = startStreams;
+  $("#pkg").onkeydown = (e) => { if (e.key === "Enter") startStreams(); };
+  document.querySelectorAll("[data-app]").forEach(b => b.onclick = async () => {
+    const pkg = $("#pkg").value.trim();
+    if (!pkg) return status("Enter an app package first");
+    try { await call(devPath("app"), { action: b.dataset.app, package: pkg }); status(`${b.dataset.app}: ${pkg}`);
+      setTimeout(startStreams, 1200); } catch (e) { status(e.message); }
+  });
+  document.querySelectorAll("[data-key]").forEach(b => b.onclick = () => sendInput({ type: "key", key: b.dataset.key }));
+  $("#type").onsubmit = (e) => { e.preventDefault(); const t = e.target.text; if (t.value) sendInput({ type: "text", text: t.value }); t.value = ""; };
+  $("#log-pause").onclick = (e) => { logPaused = !logPaused; e.target.textContent = logPaused ? "Resume" : "Pause"; if (!logPaused) renderLog(); };
+  $("#log-clear").onclick = () => { logLines = []; renderLog(); };
+  $("#log-filter").oninput = renderLog; $("#log-level").onchange = renderLog;
+  wireScreenInput();
+}
+
+async function sendInput(action) {
+  try { await call(devPath("input"), action); } catch (e) { status(e.message); }
+}
+
+// Screen: fetch the next frame as soon as the previous one has arrived.
+async function screenLoop(d) {
+  let lastUrl = null;
+  while (current === d) {
+    const img = $("#screen");
+    if (!img || !$("#live").checked) { await sleep(500); continue; }
+    const t0 = performance.now();
+    try {
+      const res = await fetch(api(devPath("screen.png")));
+      if (!res.ok) throw new Error((await res.json()).error);
+      const url = URL.createObjectURL(await res.blob());
+      if (current !== d) { URL.revokeObjectURL(url); break; }
+      img.src = url; if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = url;
+      $("#screen-info").dataset.fps = (1000 / (performance.now() - t0)).toFixed(1);
+      await sleep(Math.max(0, 100 - (performance.now() - t0)));  // cap at ~10 fps
+    } catch (e) { $("#screen-info").textContent = "Screen: " + e.message; await sleep(2000); }
+  }
+}
+
+function wireScreenInput() {
+  const img = $("#screen");
+  let start = null;
+  const toDevice = (ev) => {
+    const r = img.getBoundingClientRect();
+    return { x: Math.round((ev.clientX - r.left) * img.naturalWidth / r.width),
+             y: Math.round((ev.clientY - r.top) * img.naturalHeight / r.height) };
+  };
+  img.onpointerdown = (ev) => { if (img.naturalWidth) { start = { ...toDevice(ev), t: Date.now() }; img.setPointerCapture(ev.pointerId); } };
+  img.onpointerup = (ev) => {
+    if (!start) return;
+    const end = toDevice(ev), ms = Math.max(80, Date.now() - start.t);
+    const moved = Math.hypot(end.x - start.x, end.y - start.y) > 15;
+    sendInput(moved ? { type: "swipe", x1: start.x, y1: start.y, x2: end.x, y2: end.y, ms: Math.min(ms, 2000) }
+                    : ms > 500 ? { type: "swipe", x1: start.x, y1: start.y, x2: start.x, y2: start.y, ms } // long press
+                    : { type: "tap", x: start.x, y: start.y });
+    start = null;
+  };
+}
+
+function startStreams() {
+  if (!current) return;
+  stopStreams();
+  history = {}; buildCards();
+  const pkg = $("#pkg").value.trim();
+  const q = pkg ? `?package=${encodeURIComponent(pkg)}` : "";
+  $("#metrics-err").textContent = "";
+  metricsSrc = new EventSource(api(devPath("metrics" + q)));
+  metricsSrc.onmessage = (ev) => { $("#metrics-err").textContent = ""; showMetrics(JSON.parse(ev.data)); };
+  metricsSrc.addEventListener("problem", (ev) => { $("#metrics-err").textContent = JSON.parse(ev.data).error; });
+  metricsSrc.onerror = () => { $("#metrics-err").textContent = "Metrics stream interrupted; retrying…"; };
+
+  logLines = []; renderLog();
+  logSrc = new EventSource(api(devPath("logs" + q)));
+  logSrc.onmessage = (ev) => {
+    logLines.push(...JSON.parse(ev.data));
+    if (logLines.length > 5000) logLines.splice(0, logLines.length - 5000);
+    if (!logPaused) renderLog();
+  };
+  logSrc.addEventListener("problem", (ev) => { logLines.push("[netscope] " + JSON.parse(ev.data).error); renderLog(); logSrc.close(); });
+  logSrc.onerror = () => { if (logSrc.readyState === EventSource.CLOSED) { logLines.push("[netscope] log stream unavailable" + (pkg ? ` (is ${pkg} running?)` : "")); renderLog(); } };
+  status(pkg ? `Watching ${pkg}` : "Watching device");
+}
+
+function showMetrics(m) {
+  const fps = $("#screen-info").dataset.fps;
+  if (m.app_running === false && $("#pkg").value.trim()) status(`${$("#pkg").value.trim()} is not running`);
+  else if (fps) status(`Mirror ${fps} fps`);
+  for (const [key] of METRICS) {
+    const card = $(`.card[data-key="${key}"]`);
+    if (!card) continue;
+    const v = m[key];
+    (history[key] ||= []).push(v ?? null);
+    if (history[key].length > HISTORY) history[key].shift();
+    card.querySelector(".value").textContent = v == null ? "–" : v;
+    sparkline(card.querySelector("canvas"), history[key]);
+  }
+}
+
+function sparkline(canvas, values) {
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d"); ctx.scale(dpr, dpr);
+  const nums = values.filter(v => v != null);
+  if (nums.length < 2) return;
+  const max = Math.max(...nums, 1), min = Math.min(...nums, 0);
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+  ctx.lineWidth = 1.5; ctx.beginPath();
+  let started = false;
+  values.forEach((v, i) => {
+    if (v == null) { started = false; return; }
+    const x = (i / (HISTORY - 1)) * w, y = h - 2 - ((v - min) / (max - min || 1)) * (h - 4);
+    started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true;
+  });
+  ctx.stroke();
+}
+
+function levelOf(line) {
+  const m = line.match(/^\S+\s+\S+\s+\d+\s+\d+\s+([VDIWEF])\s/) || line.match(/<(Debug|Info|Notice|Default|Error|Fault)>/);
+  if (!m) return "";
+  return { Debug: "D", Info: "I", Notice: "I", Default: "I", Error: "E", Fault: "F" }[m[1]] || m[1];
+}
+
+function renderLog() {
+  const pre = $("#log");
+  if (!pre) return;
+  const raw = $("#log-filter").value.trim(), minLevel = $("#log-level").value;
+  let test = () => true;
+  if (raw.startsWith("/") && raw.lastIndexOf("/") > 0) {
+    try { const re = new RegExp(raw.slice(1, raw.lastIndexOf("/")), raw.slice(raw.lastIndexOf("/") + 1)); test = (l) => re.test(l); } catch {}
+  } else if (raw) { const s = raw.toLowerCase(); test = (l) => l.toLowerCase().includes(s); }
+  const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+  const frag = document.createDocumentFragment();
+  for (const line of logLines.slice(-1500)) {
+    const lv = levelOf(line);
+    if (minLevel && lv && LEVELS.indexOf(lv) < LEVELS.indexOf(minLevel)) continue;
+    if (!test(line)) continue;
+    const div = document.createElement("div");
+    div.textContent = line; if (lv) div.className = "lv-" + lv;
+    frag.appendChild(div);
+  }
+  pre.replaceChildren(frag);
+  if (atBottom) pre.scrollTop = pre.scrollHeight;
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+loadDevices();
+setInterval(loadDevices, 10000);
+</script>
+</body>
+</html>

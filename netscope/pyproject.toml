@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netscope"
+version = "0.1.0"
+description = "Watch and drive Android/iOS phones over Wi-Fi or Tailscale with nothing installed on the phone"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+ios = ["pymobiledevice3"]
+
+[project.scripts]
+netscope = "netscope.cli:main"
+
+[tool.setuptools]
+packages = ["netscope"]
+
+[tool.setuptools.package-data]
+netscope = ["static/*"]
