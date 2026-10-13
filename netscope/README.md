@@ -35,6 +35,8 @@ Partly. Each piece exists, but in separate tools:
 
 NetScope puts these into one browser dashboard that you can reach from any machine on your Tailscale network.
 
+There is also a native iPhone/iPad app that does the same thing. See [`../ios`](../ios/).
+
 ## Install
 
 ```bash

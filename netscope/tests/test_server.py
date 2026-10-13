@@ -66,6 +66,14 @@ class EndToEnd(unittest.TestCase):
             self.req("/api/devices", token=False)
         self.assertEqual(cm.exception.code, 401)
 
+    def test_health(self):
+        self.assertTrue(self.get_json("/api/health")["ok"])
+
+    def test_token_header(self):
+        req = urllib.request.Request(self.base + "/api/health", headers={"X-NetScope-Token": self.token})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+
     def test_devices_and_info(self):
         devices = self.get_json("/api/devices")
         self.assertEqual(devices[0]["id"], SERIAL)

@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from . import __version__
 from .devices import DeviceError, Registry, Unsupported, adb_connect, adb_disconnect
 
 HEARTBEAT_SECONDS = 15
@@ -101,6 +102,8 @@ class Handler(BaseHTTPRequestHandler):
         reg = self.server.registry
         q = lambda name, default="": query.get(name, [default])[0]
 
+        if parts == ["health"] and method == "GET":
+            return self._send(200, {"ok": True, "version": __version__})
         if parts == ["devices"] and method == "GET":
             with self.server.lock:
                 devices = reg.refresh()
